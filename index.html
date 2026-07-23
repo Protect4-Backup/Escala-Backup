@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<!-- ============================================================
+  ESCALA PRO — Controle de Escala Mensal da Equipe
+  Arquivo único: HTML + CSS + JavaScript (sem dependências)
+  Persistência: Google Sheets via Google Apps Script (sem LocalStorage)
+  Pronto para incorporar no Google Sites (iframe / embed)
+  ============================================================ -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Escala Pro · Gestão de Escala da Equipe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   MÓDULO CSS 1 — DESIGN TOKENS (CSS Variables)
+   ============================================================ */
+:root{
+  --font-display:'Sora',sans-serif;
+  --font-body:'Inter',system-ui,sans-serif;
+
+  /* Paleta clara */
+  --bg:#F4F7F9;
+  --surface:#FFFFFF;
+  --surface-2:#EDF2F5;
+  --ink:#10222B;
+  --ink-soft:#51646E;
+  --line:#DCE5EA;
+  --primary:#0E7490;      /* petróleo — identidade do sistema */
+  --primary-ink:#FFFFFF;
+  --primary-soft:#E0F2F7;
+
+  /* Cores de status (requisito) */
+  --st-programado:#2563EB;   /* azul   */
+  --st-confirmado:#16A34A;   /* verde  */
+  --st-andamento:#EA580C;    /* laranja*/
+  --st-finalizado:#6B7280;   /* cinza  */
+
+  /* Cores de atividade da escala */
+  --at-normal:#0E7490;
+  --at-folga:#94A3B8;
+  --at-ferias:#7C3AED;
+  --at-feriado:#DB2777;
+  --at-noturno:#1E3A8A;
+
+  --radius:14px;
+  --shadow:0 1px 2px rgba(16,34,43,.06),0 8px 24px rgba(16,34,43,.07);
+  --sidebar-w:248px;
+  --transition:.25s cubic-bezier(.4,0,.2,1);
+}
+/* Tema escuro */
+[data-theme="dark"]{
+  --bg:#0C1A20;
+  --surface:#122730;
+  --surface-2:#0F2129;
+  --ink:#E8F0F3;
+  --ink-soft:#93A8B2;
+  --line:#1F3A45;
+  --primary:#22B8D4;
+  --primary-ink:#06242C;
+  --primary-soft:#123844;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}
+
+/* ============================================================
+   MÓDULO CSS 2 — BASE E LAYOUT
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--font-body);
+  background:var(--bg);color:var(--ink);
+  font-size:14.5px;line-height:1.5;
+  transition:background var(--transition),color var(--transition);
+}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:9px 12px;width:100%;outline:none;transition:border var(--transition)}
+input:focus,select:focus,textarea:focus{border-color:var(--primary)}
+label{font-size:12.5px;font-weight:600;color:var(--ink-soft);display:block;margin:10px 0 4px}
+
+.app{display:flex;min-height:100vh}
+
+/* Barra lateral recolhível */
+.sidebar{
+  width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;position:fixed;inset:0 auto 0 0;z-index:40;
+  transition:transform var(--transition),width var(--transition);
+}
+.sidebar.collapsed{width:70px}
+.sidebar.collapsed .nav-label,.sidebar.collapsed .brand-name{display:none}
+.brand{display:flex;align-items:center;gap:10px;padding:18px 16px;border-bottom:1px solid var(--line)}
+.brand-badge{width:36px;height:36px;border-radius:10px;background:var(--primary);color:var(--primary-ink);
+  display:grid;place-items:center;font-family:var(--font-display);font-weight:700;flex:none}
+.brand-name{font-family:var(--font-display);font-weight:600;font-size:15px;line-height:1.2}
+.brand-name small{display:block;font-family:var(--font-body);font-weight:500;font-size:11px;color:var(--ink-soft)}
+.nav{padding:10px;flex:1;overflow:auto}
+.nav-item{display:flex;align-items:center;gap:11px;width:100%;border:0;background:none;
+  padding:10px 12px;border-radius:10px;color:var(--ink-soft);font-weight:500;font-size:14px;
+  transition:background var(--transition),color var(--transition)}
+.nav-item svg{flex:none}
+.nav-item:hover{background:var(--surface-2);color:var(--ink)}
+.nav-item.active{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.side-foot{padding:12px;border-top:1px solid var(--line);display:flex;gap:8px}
+
+.main{flex:1;margin-left:var(--sidebar-w);transition:margin var(--transition);min-width:0}
+.sidebar.collapsed + .main{margin-left:70px}
+
+.topbar{display:flex;align-items:center;gap:12px;padding:14px 22px;
+  position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 85%,transparent);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.page-title{font-family:var(--font-display);font-size:18px;font-weight:600;flex:1}
+.icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);display:grid;place-items:center;transition:var(--transition)}
+.icon-btn:hover{border-color:var(--primary);color:var(--primary)}
+
+.content{padding:22px;max-width:1400px}
+.view{display:none;animation:fadeUp .3s ease}
+.view.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ============================================================
+   MÓDULO CSS 3 — COMPONENTES (cards, tabelas, badges, modais)
+   ============================================================ */
+.grid-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:16px}
+.kpi .kpi-num{font-family:var(--font-display);font-size:30px;font-weight:700;line-height:1.1}
+.kpi .kpi-label{font-size:12.5px;color:var(--ink-soft);font-weight:500}
+.kpi{border-left:4px solid var(--primary)}
+.kpi[data-tone="blue"]{border-left-color:var(--st-programado)}
+.kpi[data-tone="green"]{border-left-color:var(--st-confirmado)}
+.kpi[data-tone="orange"]{border-left-color:var(--st-andamento)}
+.kpi[data-tone="gray"]{border-left-color:var(--st-finalizado)}
+
+.card h3{font-family:var(--font-display);font-size:15px;font-weight:600;margin-bottom:12px}
+.section-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.section-head h2{font-family:var(--font-display);font-size:17px;font-weight:600;flex:1}
+
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);padding:9px 14px;font-weight:600;font-size:13.5px;
+  transition:var(--transition)}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.btn.primary:hover{filter:brightness(1.08);color:var(--primary-ink)}
+.btn.danger{color:#DC2626}
+
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);
+  background:var(--surface-2);position:sticky;top:0;cursor:pointer;user-select:none}
+tbody tr:hover{background:var(--surface-2)}
+.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;color:#fff}
+.badge.Programado{background:var(--st-programado)}
+.badge.Confirmado{background:var(--st-confirmado)}
+.badge["Em andamento"],.badge.andamento{background:var(--st-andamento)}
+.badge.Finalizado{background:var(--st-finalizado)}
+.badge.Ativo{background:var(--st-confirmado)}
+.badge.Inativo{background:var(--st-finalizado)}
+
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+
+/* Calendário */
+.cal-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.cal-title{font-family:var(--font-display);font-weight:600;font-size:16px;flex:1;text-transform:capitalize}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-dow{font-size:11.5px;font-weight:600;text-transform:uppercase;color:var(--ink-soft);text-align:center;padding:4px}
+.cal-cell{background:var(--surface);border:1px solid var(--line);border-radius:10px;min-height:92px;padding:6px;font-size:12px}
+.cal-cell.out{opacity:.35}
+.cal-cell.today{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-soft)}
+.cal-day{font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between}
+.cal-hol{color:var(--at-feriado);font-size:10px;font-weight:600}
+.pill{display:block;border-radius:6px;padding:2px 6px;margin:2px 0;color:#fff;font-size:10.5px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Escala mensal (matriz colaborador × dia) */
+.matrix td,.matrix th{padding:5px 6px;font-size:11.5px;text-align:center}
+.matrix td:first-child,.matrix th:first-child{text-align:left;position:sticky;left:0;background:var(--surface);font-weight:600}
+.cell-tag{display:inline-block;min-width:34px;border-radius:6px;padding:2px 4px;color:#fff;font-size:10px;font-weight:600}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(6,20,26,.55);display:none;place-items:center;z-index:60;padding:16px}
+.modal-bg.open{display:grid}
+.modal{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);
+  width:min(560px,100%);max-height:90vh;overflow:auto;padding:20px;animation:fadeUp .25s ease}
+.modal h3{font-family:var(--font-display);margin-bottom:6px}
+.modal .row{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+
+/* Toasts */
+.toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:80}
+.toast{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--st-confirmado);
+  border-radius:10px;box-shadow:var(--shadow);padding:11px 14px;font-size:13.5px;min-width:240px;animation:fadeUp .25s ease}
+.toast.error{border-left-color:#DC2626}
+
+/* Loader de sincronização */
+.loader{position:fixed;inset:auto 16px 16px auto;display:none;align-items:center;gap:10px;
+  background:var(--surface);border:1px solid var(--line);border-radius:999px;box-shadow:var(--shadow);
+  padding:8px 16px;z-index:90;font-size:13px;font-weight:600}
+.loader.on{display:flex}
+.spin{width:16px;height:16px;border:2.5px solid var(--line);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Modo foco: esconde sidebar/topbar extras */
+body.foco .sidebar,body.foco .topbar .icon-btn:not(#btnFoco){display:none}
+body.foco .main{margin-left:0}
+
+/* Impressão / Exportar PDF */
+@media print{
+  .sidebar,.topbar,.filters,.section-head .btn,.modal-bg,.toasts,.loader{display:none!important}
+  .main{margin:0}.content{padding:0;max-width:none}
+  body{background:#fff;color:#000}
+  .card,.table-wrap{box-shadow:none;border-color:#bbb}
+}
+
+/* Responsividade */
+@media (max-width:900px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.mobile-open{transform:none}
+  .main{margin-left:0!important}
+  .modal .row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body data-theme="light">
+
+<!-- ============================================================
+     MÓDULO HTML — ESTRUTURA
+     ============================================================ -->
+<div class="app">
+
+  <!-- Menu lateral -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-badge">EP</div>
+      <div class="brand-name">Escala Pro<small>Equipe de Sustentação</small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-view="dashboard">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        <span class="nav-label">Dashboard</span></button>
+      <button class="nav-item" data-view="colaboradores">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 15.3c2.9.2 4.8 1.7 5.5 4.7"/></svg>
+        <span class="nav-label">Colaboradores</span></button>
+      <button class="nav-item" data-view="plantoes">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        <span class="nav-label">Plantões</span></button>
+      <button class="nav-item" data-view="escala">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+        <span class="nav-label">Escala Mensal</span></button>
+      <button class="nav-item" data-view="config">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2Z"/></svg>
+        <span class="nav-label">Configurações</span></button>
+    </nav>
+    <div class="side-foot">
+      <button class="icon-btn" id="btnCollapse" title="Recolher menu">⟨⟩</button>
+      <button class="btn" id="btnSync" style="flex:1">↻ Sincronizar</button>
+    </div>
+  </aside>
+
+  <!-- Área principal -->
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn" id="btnMenu" title="Menu">☰</button>
+      <div class="page-title" id="pageTitle">Dashboard</div>
+      <button class="icon-btn" id="btnFoco" title="Modo foco">◎</button>
+      <button class="icon-btn" id="btnPrint" title="Imprimir / PDF">⎙</button>
+      <button class="icon-btn" id="btnTheme" title="Tema claro/escuro">☾</button>
+    </header>
+
+    <div class="content">
+
+      <!-- ================= DASHBOARD ================= -->
+      <section class="view active" id="view-dashboard">
+        <div class="grid-cards">
+          <div class="card kpi"><div class="kpi-num" id="kTotal">0</div><div class="kpi-label">Colaboradores</div></div>
+          <div class="card kpi" data-tone="orange"><div class="kpi-num" id="kAtivos">0</div><div class="kpi-label">Plantões em andamento</div></div>
+          <div class="card kpi" data-tone="blue"><div class="kpi-num" id="kFuturos">0</div><div class="kpi-label">Plantões futuros</div></div>
+          <div class="card kpi" data-tone="gray"><div class="kpi-num" id="kEncerrados">0</div><div class="kpi-label">Plantões encerrados</div></div>
+        </div>
+        <div class="grid-cards" style="grid-template-columns:1.2fr .8fr">
+          <div class="card"><h3>Linha do tempo — próximos plantões</h3><div id="timeline"></div></div>
+          <div class="card" id="cardProximo"><h3>Próximo plantão</h3><div id="proximo">—</div></div>
+        </div>
+        <div class="card">
+          <div class="cal-head">
+            <button class="icon-btn" id="calPrev">‹</button>
+            <div class="cal-title" id="calTitle"></div>
+            <button class="icon-btn" id="calNext">›</button>
+          </div>
+          <div class="calendar" id="calendar"></div>
+        </div>
+      </section>
+
+      <!-- ================= COLABORADORES ================= -->
+      <section class="view" id="view-colaboradores">
+        <div class="section-head">
+          <h2>Cadastro de Colaboradores</h2>
+          <button class="btn" onclick="Exporta.csv('colab')">CSV</button>
+          <button class="btn" onclick="Exporta.json('colab')">JSON</button>
+          <button class="btn primary" onclick="Colab.abrir()">＋ Novo colaborador</button>
+        </div>
+        <div class="filters">
+          <input id="fcNome" placeholder="Pesquisar por nome…" oninput="Colab.render()">
+          <select id="fcStatus" onchange="Colab.render()">
+            <option value="">Status: todos</option><option>Ativo</option><option>Inativo</option>
+          </select>
+        </div>
+        <div class="table-wrap"><table id="tbColab">
+          <thead><tr>
+            <th data-k="nome">Nome</th><th data-k="cargo">Cargo</th><th data-k="matricula">Matrícula</th>
+            <th data-k="telefone">Telefone</th><th data-k="email">E-mail</th><th data-k="equipe">Equipe</th>
+            <th data-k="admissao">Admissão</th><th data-k="proximasFerias">Próximas férias</th>
+            <th data-k="horario">Horário</th><th data-k="status">Status</th><th></th>
+          </tr></thead><tbody></tbody>
+        </table></div>
+      </section>
+
+      <!-- ================= PLANTÕES ================= -->
+      <section class="view" id="view-plantoes">
+        <div class="section-head">
+          <h2>Plantões</h2>
+          <button class="btn" onclick="Exporta.csv('plantao')">CSV</button>
+          <button class="btn" onclick="Exporta.json('plantao')">JSON</button>
+          <button class="btn primary" onclick="Plantao.abrir()">＋ Novo plantão</button>
+        </div>
+        <div class="filters">
+          <input id="fpNome" placeholder="Colaborador…" oninput="Plantao.render()">
+          <input id="fpData" type="date" onchange="Plantao.render()">
+          <select id="fpTipo" onchange="Plantao.render()"><option value="">Tipo: todos</option></select>
+          <select id="fpStatus" onchange="Plantao.render()">
+            <option value="">Status: todos</option>
+            <option>Programado</option><option>Confirmado</option>
+            <option>Em andamento</option><option>Finalizado</option>
+          </select>
+        </div>
+        <div class="table-wrap"><table id="tbPlantao">
+          <thead><tr>
+            <th data-k="colaborador">Colaborador</th><th data-k="cargo">Cargo</th>
+            <th data-k="inicio">Início</th><th data-k="fim">Fim</th>
+            <th data-k="tipo">Tipo</th><th data-k="status">Status</th><th data-k="obs">Observação</th><th></th>
+          </tr></thead><tbody></tbody>
+        </table></div>
+      </section>
+
+      <!-- ================= ESCALA MENSAL ================= -->
+      <section class="view" id="view-escala">
+        <div class="section-head">
+          <h2>Escala completa da equipe</h2>
+          <input type="month" id="mesEscala" style="max-width:180px" onchange="Escala.render()">
+          <button class="btn" onclick="window.print()">Imprimir</button>
+        </div>
+        <div class="table-wrap"><table class="matrix" id="tbEscala"></table></div>
+        <p style="margin-top:10px;color:var(--ink-soft);font-size:12.5px">
+          Legenda: <span class="cell-tag" style="background:var(--at-normal)">N</span> Normal ·
+          <span class="cell-tag" style="background:var(--at-noturno)">12h</span> Plantão 19h–07h ·
+          <span class="cell-tag" style="background:var(--at-folga)">F</span> Folga ·
+          <span class="cell-tag" style="background:var(--at-ferias)">FÉ</span> Férias ·
+          <span class="cell-tag" style="background:var(--at-feriado)">FER</span> Feriado
+        </p>
+      </section>
+
+      <!-- ================= CONFIGURAÇÕES ================= -->
+      <section class="view" id="view-config">
+        <div class="section-head"><h2>Configurações</h2></div>
+        <div class="grid-cards" style="grid-template-columns:1fr 1fr">
+          <div class="card">
+            <h3>Integração Google Sheets</h3>
+            <label>ID da planilha Google Sheets</label>
+            <input id="cfgSheetId" placeholder="1AbC…">
+            <label>URL do Apps Script (implantação /exec)</label>
+            <input id="cfgScriptUrl" placeholder="https://script.google.com/macros/s/…/exec">
+            <div class="modal-actions"><button class="btn primary" onclick="Config.salvar()">Salvar e conectar</button></div>
+            <p style="font-size:12px;color:var(--ink-soft)">A configuração fica gravada na aba <b>Config</b> da própria planilha; aqui ela é mantida apenas na sessão do navegador (sem LocalStorage).</p>
+          </div>
+          <div class="card">
+            <h3>Feriados (TCU · nacionais e DF)</h3>
+            <div class="row" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
+              <div><label>Data</label><input type="date" id="ferData"></div>
+              <div><label>Descrição</label><input id="ferDesc" placeholder="Ex.: Tiradentes"></div>
+              <div><label>Âmbito</label><select id="ferAmb"><option>NACIONAL</option><option>DF</option></select></div>
+              <button class="btn primary" onclick="Feriado.add()">＋</button>
+            </div>
+            <div class="table-wrap" style="margin-top:12px;max-height:260px">
+              <table id="tbFeriado"><thead><tr><th>Data</th><th>Descrição</th><th>Âmbito</th><th></th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Férias programadas</h3>
+            <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:8px;align-items:end">
+              <div><label>Colaborador</label><select id="feCol"></select></div>
+              <div><label>Início</label><input type="date" id="feIni"></div>
+              <div><label>Fim</label><input type="date" id="feFim"></div>
+              <button class="btn primary" onclick="Ferias.add()">＋</button>
+            </div>
+            <div class="table-wrap" style="margin-top:12px;max-height:260px">
+              <table id="tbFerias"><thead><tr><th>Colaborador</th><th>Início</th><th>Fim</th><th></th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Troca de turno (período determinado)</h3>
+            <p style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px">Cria dois plantões espelhados trocando os turnos entre dois colaboradores no período escolhido.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div><label>Colaborador A</label><select id="trA"></select></div>
+              <div><label>Colaborador B</label><select id="trB"></select></div>
+              <div><label>Início</label><input type="date" id="trIni"></div>
+              <div><label>Fim</label><input type="date" id="trFim"></div>
+            </div>
+            <div class="modal-actions"><button class="btn primary" onclick="Troca.aplicar()">Aplicar troca</button></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Modal genérico -->
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div class="toasts" id="toasts"></div>
+<div class="loader" id="loader"><span class="spin"></span><span id="loaderTxt">Sincronizando…</span></div>
+
+<script>
+/* ============================================================
+   MÓDULO JS 0 — CONFIGURAÇÃO
+   Preencha os dois valores abaixo após criar a planilha e
+   publicar o Apps Script (veja o passo a passo).
+   ============================================================ */
+const CONFIG = {
+  SHEET_ID:   "1Rfk8t6g50lZFkmCeOJfMNRpkc29c1VrVsm-OD15CoT0",
+  SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxIyZ5zQv9DbMacjfZ2KmUs02-GyMRmbEylDlhajpVI1Rl2Wxbn_in5TlGCHqVqpk_KQw/exec",
+  TURNOS: [                                   // Turnos oficiais da equipe
+    {id:"07-14", label:"07h às 14h",  ini:"07:00", fim:"14:00", cor:"var(--at-normal)"},
+    {id:"09-16", label:"09h às 16h",  ini:"09:00", fim:"16:00", cor:"var(--at-normal)"},
+    {id:"10-18", label:"10h às 18h",  ini:"10:00", fim:"18:00", cor:"var(--at-normal)"},
+    {id:"11-18", label:"11h às 18h",  ini:"11:00", fim:"18:00", cor:"var(--at-normal)"},
+    {id:"13-20", label:"13h às 20h",  ini:"13:00", fim:"20:00", cor:"var(--at-normal)"},
+    {id:"19-07", label:"19h às 07h (12h)", ini:"19:00", fim:"07:00", cor:"var(--at-noturno)", noturno:true},
+    {id:"07-19", label:"07h às 19h (12h)", ini:"07:00", fim:"19:00", cor:"var(--at-noturno)"}
+  ],
+  ATUALIZA_MS: 120000        // atualização automática a cada 2 min
+};
+
+/* ============================================================
+   MÓDULO JS 1 — ESTADO GLOBAL
+   ============================================================ */
+const Estado = {
+  colaboradores: [],   // {id,nome,cargo,matricula,telefone,email,equipe,admissao,proximasFerias,horario,cargaMensal,status}
+  plantoes: [],        // {id,colaborador,inicio,fim,tipo,status,obs}
+  ferias: [],          // {id,colaborador,inicio,fim}
+  feriados: [],        // {id,data,descricao,ambito}
+  calRef: new Date(),
+  sort: {}
+};
+
+/* ============================================================
+   MÓDULO JS 2 — UTILITÁRIOS REUTILIZÁVEIS
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtD  = d => d ? new Date(d+"T00:00:00").toLocaleDateString("pt-BR") : "—";
+const fmtDT = d => d ? new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
+const hoje  = () => new Date();
+const uid   = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+/** Deriva o status pelo horário atual, preservando "Confirmado" antes do início. */
+function statusAuto(p){
+  const now = hoje(), i = new Date(p.inicio), f = new Date(p.fim);
+  if (now > f) return "Finalizado";
+  if (now >= i) return "Em andamento";
+  return p.status === "Confirmado" ? "Confirmado" : "Programado";
+}
+function toast(msg, erro=false){
+  const t = document.createElement("div");
+  t.className = "toast"+(erro?" error":""); t.textContent = msg;
+  $("#toasts").appendChild(t); setTimeout(()=>t.remove(), 4200);
+}
+function loader(on, txt="Sincronizando…"){ $("#loaderTxt").textContent=txt; $("#loader").classList.toggle("on",on); }
+
+/* ============================================================
+   MÓDULO JS 3 — API (Google Apps Script ⇄ Google Sheets)
+   Todas as gravações vão direto para a planilha; nada em LocalStorage.
+   ============================================================ */
+const API = {
+  ok(){
+    const u = CONFIG.SCRIPT_URL;
+    return u.startsWith("https://script.google.com/") && u.endsWith("/exec") && !u.includes("...");
+  },
+
+  /** POST com corpo text/plain (evita preflight CORS no Apps Script). */
+  async call(action, payload={}){
+    if (!this.ok()){
+      toast("Integração não configurada: informe a URL /exec do Apps Script em Configurações.", true);
+      throw new Error("integração não configurada");
+    }
+    loader(true);
+    try{
+      const r = await fetch(CONFIG.SCRIPT_URL, {
+        method:"POST",
+        headers:{ "Content-Type":"text/plain;charset=utf-8" },
+        body: JSON.stringify({ action, sheetId: CONFIG.SHEET_ID, payload })
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "Erro no Apps Script");
+      return j.data;
+    } finally { loader(false); }
+  },
+
+  /** Carrega tudo da planilha e redesenha a interface. */
+  async carregarTudo(silencioso=false){
+    try{
+      const d = await this.call("getAll");
+      Estado.colaboradores = d.colaboradores || [];
+      Estado.plantoes      = d.plantoes || [];
+      Estado.ferias        = d.ferias || [];
+      Estado.feriados      = d.feriados || [];
+      UI.renderTudo();
+      if (!silencioso) toast("Dados sincronizados com a planilha.");
+    }catch(e){ if(!silencioso) toast("Falha ao sincronizar: "+e.message, true); }
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 4 — UI GERAL (tema, menu, navegação, foco)
+   ============================================================ */
+const UI = {
+  init(){
+    // Navegação lateral
+    $("#nav").addEventListener("click", e=>{
+      const b = e.target.closest(".nav-item"); if(!b) return;
+      document.querySelectorAll(".nav-item").forEach(x=>x.classList.remove("active"));
+      b.classList.add("active");
+      document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+      $("#view-"+b.dataset.view).classList.add("active");
+      $("#pageTitle").textContent = b.querySelector(".nav-label").textContent;
+      $("#sidebar").classList.remove("mobile-open");
+    });
+    $("#btnCollapse").onclick = ()=> $("#sidebar").classList.toggle("collapsed");
+    $("#btnMenu").onclick     = ()=> $("#sidebar").classList.toggle("mobile-open");
+    $("#btnTheme").onclick    = ()=>{
+      const b=document.body, dark=b.dataset.theme==="dark";
+      b.dataset.theme = dark ? "light":"dark";
+      $("#btnTheme").textContent = dark ? "☾":"☀";
+    };
+    $("#btnFoco").onclick  = ()=> document.body.classList.toggle("foco");
+    $("#btnPrint").onclick = ()=> window.print();
+    $("#btnSync").onclick  = ()=> API.carregarTudo();
+    $("#calPrev").onclick  = ()=>{ Estado.calRef.setMonth(Estado.calRef.getMonth()-1); Dash.calendario(); };
+    $("#calNext").onclick  = ()=>{ Estado.calRef.setMonth(Estado.calRef.getMonth()+1); Dash.calendario(); };
+    $("#mesEscala").value  = hoje().toISOString().slice(0,7);
+
+    // Ordenação por coluna (clique no cabeçalho)
+    document.querySelectorAll("th[data-k]").forEach(th=>{
+      th.addEventListener("click", ()=>{
+        const tb = th.closest("table").id, k = th.dataset.k;
+        Estado.sort[tb] = { k, asc: Estado.sort[tb]?.k===k ? !Estado.sort[tb].asc : true };
+        Colab.render(); Plantao.render();
+      });
+    });
+  },
+  renderTudo(){
+    Colab.render(); Plantao.render(); Dash.render(); Escala.render();
+    Feriado.render(); Ferias.render(); Config.selects();
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 5 — MODAL GENÉRICO
+   ============================================================ */
+const Modal = {
+  abrir(html){ $("#modalBox").innerHTML = html; $("#modalBg").classList.add("open"); },
+  fechar(){ $("#modalBg").classList.remove("open"); }
+};
+$("#modalBg").addEventListener("click", e=>{ if(e.target.id==="modalBg") Modal.fechar(); });
+
+/* ============================================================
+   MÓDULO JS 6 — VALIDAÇÕES
+   ============================================================ */
+const Valida = {
+  obrigatorios(obj, campos){
+    for (const c of campos) if (!String(obj[c]??"").trim())
+      return `Preencha o campo obrigatório: ${c}.`;
+    return null;
+  },
+  plantao(p, ignorarId){
+    const i = new Date(p.inicio), f = new Date(p.fim);
+    if (isNaN(i) || isNaN(f))  return "Datas inválidas.";
+    if (f <= i)                return "A data final precisa ser depois da inicial.";
+    // Sobreposição do mesmo colaborador
+    const sobre = Estado.plantoes.find(x => x.id!==ignorarId &&
+      x.colaborador===p.colaborador && new Date(x.inicio) < f && new Date(x.fim) > i);
+    if (sobre) return `${p.colaborador} já possui plantão sobreposto (${fmtDT(sobre.inicio)} – ${fmtDT(sobre.fim)}).`;
+    // Dois colaboradores no mesmo plantão (mesmo tipo e mesmo intervalo)
+    const dup = Estado.plantoes.find(x => x.id!==ignorarId &&
+      x.tipo===p.tipo && x.inicio===p.inicio && x.fim===p.fim);
+    if (dup) return `Este plantão (${p.tipo}) já está ocupado por ${dup.colaborador}.`;
+    return null;
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 7 — COLABORADORES (CRUD)
+   ============================================================ */
+const Colab = {
+  abrir(id){
+    const c = Estado.colaboradores.find(x=>x.id===id) || {};
+    Modal.abrir(`
+      <h3>${id?"Editar":"Novo"} colaborador</h3>
+      <label>Nome completo *</label><input id="mNome" value="${esc(c.nome)}">
+      <div class="row">
+        <div><label>Cargo *</label><input id="mCargo" value="${esc(c.cargo)}"></div>
+        <div><label>Matrícula</label><input id="mMat" value="${esc(c.matricula)}"></div>
+        <div><label>Telefone</label><input id="mTel" value="${esc(c.telefone)}"></div>
+        <div><label>E-mail</label><input id="mEmail" type="email" value="${esc(c.email)}"></div>
+        <div><label>Equipe *</label><input id="mEquipe" value="${esc(c.equipe||'Sustentação')}"></div>
+        <div><label>Status</label><select id="mStatus"><option>Ativo</option><option ${c.status==="Inativo"?"selected":""}>Inativo</option></select></div>
+        <div><label>Data de entrada na empresa</label><input id="mAdm" type="date" value="${esc(c.admissao)}"></div>
+        <div><label>Próximas férias (início)</label><input id="mFer" type="date" value="${esc(c.proximasFerias)}"></div>
+        <div><label>Horário padrão</label><select id="mHor">${CONFIG.TURNOS.map(t=>`<option ${c.horario===t.label?"selected":""}>${t.label}</option>`).join("")}</select></div>
+        <div><label>Carga horária mensal</label><input id="mCarga" type="number" value="${esc(c.cargaMensal||210)}"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="Modal.fechar()">Cancelar</button>
+        <button class="btn primary" onclick="Colab.salvar('${id||""}')">Salvar</button>
+      </div>`);
+  },
+  async salvar(id){
+    const c = {
+      id: id || uid(),
+      nome:$("#mNome").value.trim(), cargo:$("#mCargo").value.trim(),
+      matricula:$("#mMat").value.trim(), telefone:$("#mTel").value.trim(),
+      email:$("#mEmail").value.trim(), equipe:$("#mEquipe").value.trim(),
+      admissao:$("#mAdm").value, proximasFerias:$("#mFer").value,
+      horario:$("#mHor").value, cargaMensal:$("#mCarga").value,
+      status:$("#mStatus").value
+    };
+    const err = Valida.obrigatorios(c, ["nome","cargo","equipe"]);
+    if (err) return toast(err, true);
+    try{
+      await API.call(id?"editarColaborador":"adicionarColaborador", c);
+      Modal.fechar(); toast(id?"Colaborador atualizado.":"Colaborador cadastrado.");
+      API.carregarTudo(true);
+    }catch(e){ toast(e.message, true); }
+  },
+  async excluir(id){
+    if (!confirm("Excluir este colaborador?")) return;
+    try{ await API.call("excluirColaborador",{id}); toast("Colaborador excluído."); API.carregarTudo(true); }
+    catch(e){ toast(e.message, true); }
+  },
+  render(){
+    const q=$("#fcNome").value.toLowerCase(), st=$("#fcStatus").value;
+    let list = Estado.colaboradores.filter(c=>
+      (!q || c.nome.toLowerCase().includes(q)) && (!st || c.status===st));
+    const s = Estado.sort["tbColab"];
+    if (s) list.sort((a,b)=>String(a[s.k]??"").localeCompare(String(b[s.k]??""))*(s.asc?1:-1));
+    $("#tbColab tbody").innerHTML = list.map(c=>`<tr>
+      <td>${esc(c.nome)}</td><td>${esc(c.cargo)}</td><td>${esc(c.matricula)}</td>
+      <td>${esc(c.telefone)}</td><td>${esc(c.email)}</td><td>${esc(c.equipe)}</td>
+      <td>${fmtD(c.admissao)}</td><td>${fmtD(c.proximasFerias)}</td>
+      <td>${esc(c.horario)}</td>
+      <td><span class="badge ${c.status}">${c.status}</span></td>
+      <td><button class="btn" onclick="Colab.abrir('${c.id}')">✎</button>
+          <button class="btn danger" onclick="Colab.excluir('${c.id}')">🗑</button></td>
+    </tr>`).join("") || `<tr><td colspan="11" style="color:var(--ink-soft)">Nenhum colaborador. Clique em “Novo colaborador” para começar.</td></tr>`;
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 8 — PLANTÕES (CRUD)
+   ============================================================ */
+const Plantao = {
+  abrir(id){
+    const p = Estado.plantoes.find(x=>x.id===id) || {};
+    Modal.abrir(`
+      <h3>${id?"Editar":"Novo"} plantão</h3>
+      <label>Colaborador *</label>
+      <select id="pCol">${Estado.colaboradores.filter(c=>c.status==="Ativo")
+        .map(c=>`<option ${p.colaborador===c.nome?"selected":""}>${esc(c.nome)}</option>`).join("")}</select>
+      <div class="row">
+        <div><label>Data/hora inicial *</label><input id="pIni" type="datetime-local" value="${esc(p.inicio)}"></div>
+        <div><label>Data/hora final *</label><input id="pFim" type="datetime-local" value="${esc(p.fim)}"></div>
+        <div><label>Tipo *</label><select id="pTipo">${CONFIG.TURNOS.map(t=>`<option ${p.tipo===t.label?"selected":""}>${t.label}</option>`).join("")}</select></div>
+        <div><label>Status</label><select id="pStatus">
+          ${["Programado","Confirmado","Em andamento","Finalizado"].map(s=>`<option ${p.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
+      </div>
+      <label>Observação</label><input id="pObs" value="${esc(p.obs)}">
+      <div class="modal-actions">
+        <button class="btn" onclick="Modal.fechar()">Cancelar</button>
+        <button class="btn primary" onclick="Plantao.salvar('${id||""}')">Salvar</button>
+      </div>`);
+  },
+  async salvar(id){
+    const p = { id:id||uid(), colaborador:$("#pCol").value, inicio:$("#pIni").value,
+      fim:$("#pFim").value, tipo:$("#pTipo").value, status:$("#pStatus").value, obs:$("#pObs").value };
+    let err = Valida.obrigatorios(p,["colaborador","inicio","fim","tipo"]) || Valida.plantao(p,id);
+    if (err) return toast(err, true);
+    try{
+      await API.call(id?"editarPlantao":"adicionarPlantao", p);
+      Modal.fechar(); toast(id?"Plantão atualizado.":"Plantão cadastrado.");
+      API.carregarTudo(true);
+    }catch(e){ toast(e.message, true); }
+  },
+  async excluir(id){
+    if (!confirm("Excluir este plantão?")) return;
+    try{ await API.call("excluirPlantao",{id}); toast("Plantão excluído."); API.carregarTudo(true); }
+    catch(e){ toast(e.message, true); }
+  },
+  render(){
+    // Preenche o filtro de tipo uma única vez
+    if ($("#fpTipo").options.length===1)
+      CONFIG.TURNOS.forEach(t=>$("#fpTipo").insertAdjacentHTML("beforeend",`<option>${t.label}</option>`));
+    const q=$("#fpNome").value.toLowerCase(), d=$("#fpData").value,
+          tp=$("#fpTipo").value, st=$("#fpStatus").value;
+    let list = Estado.plantoes.map(p=>({...p, status:statusAuto(p),
+        cargo: Estado.colaboradores.find(c=>c.nome===p.colaborador)?.cargo || "—"}))
+      .filter(p=>
+        (!q||p.colaborador.toLowerCase().includes(q)) &&
+        (!d||(p.inicio.slice(0,10)<=d && p.fim.slice(0,10)>=d)) &&
+        (!tp||p.tipo===tp) && (!st||p.status===st));
+    const s = Estado.sort["tbPlantao"];
+    if (s) list.sort((a,b)=>String(a[s.k]??"").localeCompare(String(b[s.k]??""))*(s.asc?1:-1));
+    else list.sort((a,b)=>a.inicio.localeCompare(b.inicio));
+    $("#tbPlantao tbody").innerHTML = list.map(p=>`<tr>
+      <td>${esc(p.colaborador)}</td><td>${esc(p.cargo)}</td>
+      <td>${fmtDT(p.inicio)}</td><td>${fmtDT(p.fim)}</td><td>${esc(p.tipo)}</td>
+      <td><span class="badge ${p.status==="Em andamento"?"andamento":p.status}">${p.status}</span></td>
+      <td>${esc(p.obs)}</td>
+      <td><button class="btn" onclick="Plantao.abrir('${p.id}')">✎</button>
+          <button class="btn danger" onclick="Plantao.excluir('${p.id}')">🗑</button></td>
+    </tr>`).join("") || `<tr><td colspan="8" style="color:var(--ink-soft)">Nenhum plantão cadastrado.</td></tr>`;
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 9 — DASHBOARD (KPIs, linha do tempo, calendário)
+   ============================================================ */
+const Dash = {
+  render(){
+    const ps = Estado.plantoes.map(p=>({...p,status:statusAuto(p)}));
+    $("#kTotal").textContent      = Estado.colaboradores.filter(c=>c.status==="Ativo").length;
+    $("#kAtivos").textContent     = ps.filter(p=>p.status==="Em andamento").length;
+    $("#kFuturos").textContent    = ps.filter(p=>["Programado","Confirmado"].includes(p.status)).length;
+    $("#kEncerrados").textContent = ps.filter(p=>p.status==="Finalizado").length;
+
+    // Próximo plantão destacado
+    const prox = ps.filter(p=>new Date(p.inicio)>hoje()).sort((a,b)=>a.inicio.localeCompare(b.inicio))[0];
+    $("#proximo").innerHTML = prox
+      ? `<div style="font-family:var(--font-display);font-size:20px;font-weight:700">${esc(prox.colaborador)}</div>
+         <div style="color:var(--ink-soft)">${esc(prox.tipo)}</div>
+         <div style="margin-top:6px"><b>${fmtDT(prox.inicio)}</b> → ${fmtDT(prox.fim)}</div>
+         <span class="badge ${prox.status}" style="margin-top:8px;display:inline-block">${prox.status}</span>`
+      : `<span style="color:var(--ink-soft)">Nenhum plantão futuro cadastrado.</span>`;
+
+    // Linha do tempo (5 próximos)
+    const fut = ps.filter(p=>new Date(p.fim)>hoje()).sort((a,b)=>a.inicio.localeCompare(b.inicio)).slice(0,5);
+    $("#timeline").innerHTML = fut.map(p=>`
+      <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)">
+        <span class="badge ${p.status==="Em andamento"?"andamento":p.status}" style="min-width:104px;text-align:center">${p.status}</span>
+        <div style="flex:1"><b>${esc(p.colaborador)}</b> · ${esc(p.tipo)}</div>
+        <div style="color:var(--ink-soft);font-size:12.5px">${fmtDT(p.inicio)}</div>
+      </div>`).join("") || `<span style="color:var(--ink-soft)">Sem plantões futuros.</span>`;
+    this.calendario();
+  },
+  calendario(){
+    const ref = Estado.calRef, y=ref.getFullYear(), m=ref.getMonth();
+    $("#calTitle").textContent = ref.toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+    const first = new Date(y,m,1), start = new Date(first); start.setDate(1-first.getDay());
+    let html = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(d=>`<div class="cal-dow">${d}</div>`).join("");
+    for (let i=0;i<42;i++){
+      const d = new Date(start); d.setDate(start.getDate()+i);
+      const iso = d.toISOString().slice(0,10);
+      const fora = d.getMonth()!==m, isHoje = iso===hoje().toISOString().slice(0,10);
+      const fer  = Estado.feriados.find(f=>f.data===iso);
+      const pls  = Estado.plantoes.filter(p=>p.inicio.slice(0,10)<=iso && p.fim.slice(0,10)>=iso).slice(0,3);
+      html += `<div class="cal-cell ${fora?"out":""} ${isHoje?"today":""}">
+        <div class="cal-day"><span>${d.getDate()}</span>${fer?`<span class="cal-hol" title="${esc(fer.descricao)}">FER</span>`:""}</div>
+        ${pls.map(p=>{const t=CONFIG.TURNOS.find(t=>t.label===p.tipo);
+          return `<span class="pill" style="background:${t?.cor||"var(--at-normal)"}" title="${esc(p.colaborador)} · ${esc(p.tipo)}">${esc(p.colaborador.split(" ")[0])}</span>`;}).join("")}
+      </div>`;
+    }
+    $("#calendar").innerHTML = html;
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 10 — ESCALA MENSAL (matriz colaborador × dia)
+   ============================================================ */
+const Escala = {
+  atividade(colab, iso){
+    // 1. Férias
+    if (Estado.ferias.some(f=>f.colaborador===colab.nome && f.inicio<=iso && f.fim>=iso))
+      return {t:"FÉ", cor:"var(--at-ferias)", tip:"Férias"};
+    // 2. Plantão cadastrado nesse dia
+    const p = Estado.plantoes.find(p=>p.colaborador===colab.nome &&
+      p.inicio.slice(0,10)<=iso && p.fim.slice(0,10)>=iso);
+    if (p){
+      const t = CONFIG.TURNOS.find(t=>t.label===p.tipo);
+      return {t:t?.noturno?"12h":"P", cor:t?.cor||"var(--at-normal)", tip:p.tipo};
+    }
+    // 3. Feriado
+    const fer = Estado.feriados.find(f=>f.data===iso);
+    if (fer) return {t:"FER", cor:"var(--at-feriado)", tip:fer.descricao};
+    // 4. Fim de semana = folga padrão; dia útil = expediente normal
+    const dow = new Date(iso+"T00:00:00").getDay();
+    if (dow===0||dow===6) return {t:"F", cor:"var(--at-folga)", tip:"Folga"};
+    return {t:"N", cor:"var(--at-normal)", tip:colab.horario||"Expediente normal"};
+  },
+  render(){
+    const mes = $("#mesEscala").value; if(!mes) return;
+    const [y,m] = mes.split("-").map(Number);
+    const dias = new Date(y,m,0).getDate();
+    let head = `<thead><tr><th>Colaborador</th>`;
+    for (let d=1;d<=dias;d++) head += `<th>${String(d).padStart(2,"0")}</th>`;
+    head += `</tr></thead>`;
+    const rows = Estado.colaboradores.filter(c=>c.status==="Ativo").map(c=>{
+      let tds = `<td title="${esc(c.horario)}">${esc(c.nome.split(" ").slice(0,2).join(" "))}</td>`;
+      for (let d=1;d<=dias;d++){
+        const iso = `${mes}-${String(d).padStart(2,"0")}`;
+        const a = this.atividade(c, iso);
+        tds += `<td><span class="cell-tag" style="background:${a.cor}" title="${esc(a.tip)}">${a.t}</span></td>`;
+      }
+      return `<tr>${tds}</tr>`;
+    }).join("");
+    $("#tbEscala").innerHTML = head + `<tbody>${rows ||
+      `<tr><td style="color:var(--ink-soft)">Cadastre colaboradores para montar a escala.</td></tr>`}</tbody>`;
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 11 — FERIADOS E FÉRIAS
+   ============================================================ */
+const Feriado = {
+  async add(){
+    const f = { id:uid(), data:$("#ferData").value, descricao:$("#ferDesc").value.trim(), ambito:$("#ferAmb").value };
+    if (!f.data || !f.descricao) return toast("Informe data e descrição do feriado.", true);
+    try{ await API.call("adicionarFeriado",f); toast("Feriado cadastrado."); API.carregarTudo(true); }
+    catch(e){ toast(e.message,true); }
+  },
+  async excluir(id){
+    try{ await API.call("excluirFeriado",{id}); toast("Feriado removido."); API.carregarTudo(true); }
+    catch(e){ toast(e.message,true); }
+  },
+  render(){
+    $("#tbFeriado tbody").innerHTML = [...Estado.feriados].sort((a,b)=>a.data.localeCompare(b.data))
+      .map(f=>`<tr><td>${fmtD(f.data)}</td><td>${esc(f.descricao)}</td><td>${esc(f.ambito)}</td>
+        <td><button class="btn danger" onclick="Feriado.excluir('${f.id}')">🗑</button></td></tr>`).join("");
+  }
+};
+const Ferias = {
+  async add(){
+    const f = { id:uid(), colaborador:$("#feCol").value, inicio:$("#feIni").value, fim:$("#feFim").value };
+    if (!f.colaborador||!f.inicio||!f.fim) return toast("Preencha colaborador e o período de férias.", true);
+    if (f.fim<f.inicio) return toast("Datas inválidas: fim antes do início.", true);
+    try{ await API.call("adicionarFerias",f); toast("Férias cadastradas."); API.carregarTudo(true); }
+    catch(e){ toast(e.message,true); }
+  },
+  async excluir(id){
+    try{ await API.call("excluirFerias",{id}); toast("Período removido."); API.carregarTudo(true); }
+    catch(e){ toast(e.message,true); }
+  },
+  render(){
+    $("#tbFerias tbody").innerHTML = Estado.ferias.map(f=>`<tr>
+      <td>${esc(f.colaborador)}</td><td>${fmtD(f.inicio)}</td><td>${fmtD(f.fim)}</td>
+      <td><button class="btn danger" onclick="Ferias.excluir('${f.id}')">🗑</button></td></tr>`).join("");
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 12 — TROCA DE TURNOS
+   ============================================================ */
+const Troca = {
+  async aplicar(){
+    const a=$("#trA").value, b=$("#trB").value, ini=$("#trIni").value, fim=$("#trFim").value;
+    if (!a||!b||!ini||!fim) return toast("Preencha os dois colaboradores e o período.", true);
+    if (a===b) return toast("Escolha colaboradores diferentes.", true);
+    if (fim<ini) return toast("Datas inválidas.", true);
+    const ca=Estado.colaboradores.find(c=>c.nome===a), cb=Estado.colaboradores.find(c=>c.nome===b);
+    try{
+      // Registra dois plantões espelhados no período com o turno do outro colaborador
+      await API.call("adicionarPlantao",{ id:uid(), colaborador:a, inicio:ini+"T00:00", fim:fim+"T23:59",
+        tipo:cb.horario, status:"Programado", obs:`Troca de turno com ${b}` });
+      await API.call("adicionarPlantao",{ id:uid(), colaborador:b, inicio:ini+"T00:00", fim:fim+"T23:59",
+        tipo:ca.horario, status:"Programado", obs:`Troca de turno com ${a}` });
+      toast("Troca de turnos aplicada no período."); API.carregarTudo(true);
+    }catch(e){ toast(e.message,true); }
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 13 — EXPORTAÇÕES (CSV, JSON, PDF via impressão)
+   ============================================================ */
+const Exporta = {
+  baixar(nome, conteudo, mime){
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([conteudo],{type:mime}));
+    a.download = nome; a.click(); URL.revokeObjectURL(a.href);
+  },
+  csv(qual){
+    const dados = qual==="colab" ? Estado.colaboradores : Estado.plantoes;
+    if (!dados.length) return toast("Nada para exportar.", true);
+    const cols = Object.keys(dados[0]);
+    const csv = [cols.join(";"), ...dados.map(d=>cols.map(c=>`"${String(d[c]??"").replace(/"/g,'""')}"`).join(";"))].join("\n");
+    this.baixar(`${qual}_${Date.now()}.csv`, "\uFEFF"+csv, "text/csv;charset=utf-8");
+    toast("CSV exportado.");
+  },
+  json(qual){
+    const dados = qual==="colab" ? Estado.colaboradores : Estado.plantoes;
+    this.baixar(`${qual}_${Date.now()}.json`, JSON.stringify(dados,null,2), "application/json");
+    toast("JSON exportado.");
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 14 — CONFIGURAÇÕES
+   ============================================================ */
+const Config = {
+  /** Remove aspas, vírgulas e espaços que vêm junto ao copiar do guia/código. */
+  limpa(v){ return String(v||"").trim().replace(/^["']|["',]+$/g,"").trim(); },
+  salvar(){
+    const id  = this.limpa($("#cfgSheetId").value);
+    const url = this.limpa($("#cfgScriptUrl").value);
+    if (id)  CONFIG.SHEET_ID = id;
+    if (url) CONFIG.SCRIPT_URL = url;
+    if (!API.ok())
+      return toast("URL inválida: cole a URL completa da implantação, que começa com https://script.google.com/ e termina em /exec (sem aspas nem reticências).", true);
+    toast("Configuração aplicada. Sincronizando…");
+    API.carregarTudo();
+  },
+  selects(){
+    const ops = Estado.colaboradores.filter(c=>c.status==="Ativo")
+      .map(c=>`<option>${esc(c.nome)}</option>`).join("");
+    ["#feCol","#trA","#trB"].forEach(s=>$(s).innerHTML=ops);
+  }
+};
+
+/* ============================================================
+   MÓDULO JS 15 — INICIALIZAÇÃO E EVENTOS
+   ============================================================ */
+window.addEventListener("DOMContentLoaded", ()=>{
+  UI.init();
+  $("#cfgSheetId").value   = CONFIG.SHEET_ID.startsWith("COLE") ? "" : CONFIG.SHEET_ID;
+  $("#cfgScriptUrl").value = CONFIG.SCRIPT_URL.startsWith("COLE") ? "" : CONFIG.SCRIPT_URL;
+  if (API.ok()){
+    API.carregarTudo(true);
+    setInterval(()=>API.carregarTudo(true), CONFIG.ATUALIZA_MS); // atualização automática
+  } else {
+    UI.renderTudo();
+    toast("Bem-vindo! Configure a integração com o Google Sheets em Configurações.");
+  }
+});
+</script>
+</body>
+</html>
